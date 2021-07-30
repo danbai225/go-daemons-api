@@ -17,10 +17,15 @@ import (
 
 //https://www.cnblogs.com/tobycnblogs/p/9981796.html
 var daemon bool
+var launcher bool
 
 func init() {
 	flag.BoolVar(&daemon, "d", false, "是否为守护启动模式")
+	flag.BoolVar(&launcher, "l", false, "Launcher")
 	flag.Parse()
+	if launcher {
+		return
+	}
 	if os.Getppid() != 1 && daemon && len(os.Args) >= 2 {
 		arg := make([]string, 0)
 		if len(os.Args) > 3 {
@@ -59,9 +64,17 @@ func checkPid() {
 	}
 }
 func main() {
-	router := gin.Default()
-	router.POST("/run", run)
-	router.Run(":8080")
+	if launcher {
+		if len(os.Args) >= 2 {
+			u := daemonRun(os.Args[2])
+			print(u)
+			os.Exit(0)
+		}
+	} else {
+		router := gin.Default()
+		router.POST("/run", run)
+		router.Run(":8080")
+	}
 }
 func run(c *gin.Context) {
 	a := struct {
@@ -73,7 +86,12 @@ func run(c *gin.Context) {
 			gin.H{"error": err.Error()})
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"msg": "ok", "data": daemonRun(a.Cmd)})
+	command := exec.Command("./main", "-l", "a web")
+	out, _ := command.CombinedOutput()
+	parseUint, _ := strconv.ParseUint(string(out), 10, 32)
+	c.JSON(http.StatusOK, gin.H{"msg": "ok", "data": map[string]interface{}{
+		"pid": parseUint,
+	}})
 	return
 }
 
