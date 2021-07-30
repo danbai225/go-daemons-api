@@ -43,9 +43,20 @@ func init() {
 		}
 		os.Exit(0)
 	}
+	//go checkPid()
 }
 func checkPid() {
-
+	for {
+		rd, err := ioutil.ReadDir("pid/")
+		if err == nil {
+			for _, fi := range rd {
+				if !fi.IsDir() {
+					fmt.Println(fi.Name())
+				}
+			}
+		}
+		time.Sleep(time.Second)
+	}
 }
 func main() {
 	router := gin.Default()
@@ -82,7 +93,8 @@ func daemonRun(cmd string) uint {
 			Setsid: true,
 		},
 	}
-	if _, err := os.StartProcess(ExecPath(), split, attr); err == nil {
+	if c, err := os.StartProcess(ExecPath(), split, attr); err == nil {
+		defer c.Release()
 		pidFile := fmt.Sprintf("pid%c%s.pid", os.PathSeparator, strings.ReplaceAll(cmd, " ", ""))
 		time.Sleep(time.Second)
 		bytes, err := ioutil.ReadFile(pidFile)
