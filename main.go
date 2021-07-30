@@ -47,16 +47,24 @@ func init() {
 			file.WriteString(strconv.Itoa(cmd.Process.Pid))
 		}
 		os.Exit(0)
+	} else if !launcher {
+		go checkPidRun()
 	}
-	//go checkPid()
 }
-func checkPid() {
+func checkPidRun() {
 	for {
 		rd, err := ioutil.ReadDir("pid/")
 		if err == nil {
 			for _, fi := range rd {
 				if !fi.IsDir() {
-					fmt.Println(fi.Name())
+					path := fmt.Sprintf("pid%c%s", os.PathSeparator, fi.Name())
+					bytes, err := ioutil.ReadFile(path)
+					if err == nil {
+						pid, _ := strconv.ParseInt(string(bytes), 10, 32)
+						if !checkPid(int(pid)) {
+							os.Remove(path)
+						}
+					}
 				}
 			}
 		}
@@ -86,7 +94,7 @@ func run(c *gin.Context) {
 			gin.H{"error": err.Error()})
 		return
 	}
-	command := exec.Command("./main", "-l", "a web")
+	command := exec.Command(ExecPath(), "-l", "a web")
 	out, _ := command.CombinedOutput()
 	parseUint, _ := strconv.ParseUint(string(out), 10, 32)
 	c.JSON(http.StatusOK, gin.H{"msg": "ok", "data": map[string]interface{}{
@@ -135,4 +143,18 @@ func ExecPath() string {
 		appPath, _ = filepath.Abs(file)
 	}
 	return appPath
+}
+
+// Will return true if the process with PID exists.
+func checkPid(pid int) bool {
+	process, err := os.FindProcess(pid)
+	if err != nil {
+		return false
+	}
+	err = process.Signal(syscall.Signal(0))
+	if err != nil {
+		return false
+	} else {
+		return true
+	}
 }
