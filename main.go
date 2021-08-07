@@ -94,7 +94,7 @@ func run(c *gin.Context) {
 			gin.H{"error": err.Error()})
 		return
 	}
-	command := exec.Command(ExecPath(), "-l", "a web")
+	command := exec.Command(ExecPath(), "-l", a.Cmd)
 	out, _ := command.CombinedOutput()
 	parseUint, _ := strconv.ParseUint(string(out), 10, 32)
 	c.JSON(http.StatusOK, gin.H{"msg": "ok", "data": map[string]interface{}{
