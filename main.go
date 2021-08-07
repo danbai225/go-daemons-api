@@ -94,6 +94,7 @@ func run(c *gin.Context) {
 			gin.H{"error": err.Error()})
 		return
 	}
+
 	command := exec.Command(ExecPath(), "-l", a.Cmd)
 	out, _ := command.CombinedOutput()
 	parseUint, _ := strconv.ParseUint(string(out), 10, 32)
@@ -128,6 +129,7 @@ func daemonRun(cmd string) uint {
 			parseUint, _ := strconv.ParseUint(string(bytes), 10, 32)
 			return uint(parseUint)
 		}
+		c.Wait()
 	}
 	return 0
 }
