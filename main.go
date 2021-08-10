@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/base64"
 	"flag"
 	"fmt"
 	"github.com/gin-gonic/gin"
@@ -11,6 +12,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 )
@@ -34,23 +36,23 @@ func init() {
 		cmdStr := os.Args[2]
 		cmdStr += strings.Join(arg, "")
 		cmd := exec.Command(os.Args[2], arg...)
+		//文件权限描述符
+		syscall.Umask(27)
+		cmd.Start()
+		print(cmd.Process.Pid)
+		os.Exit(0)
+	} else if !launcher {
+		//pid目录
 		stat, err := os.Stat("pid/")
 		if err != nil || !stat.IsDir() {
 			os.Mkdir("pid/", 0777)
 		}
-		cmd.Start()
-		syscall.Umask(27)
-		pidFile := fmt.Sprintf("pid%c%s.pid", os.PathSeparator, cmdStr)
-		file, err := os.OpenFile(pidFile, os.O_WRONLY|os.O_TRUNC|os.O_CREATE, 0644)
-		defer file.Close()
-		if err == nil {
-			file.WriteString(strconv.Itoa(cmd.Process.Pid))
-		}
-		os.Exit(0)
-	} else if !launcher {
 		go checkPidRun()
 	}
 }
+
+var lock sync.Mutex
+
 func checkPidRun() {
 	for {
 		rd, err := ioutil.ReadDir("pid/")
@@ -62,7 +64,9 @@ func checkPidRun() {
 					if err == nil {
 						pid, _ := strconv.ParseInt(string(bytes), 10, 32)
 						if !checkPid(int(pid)) {
+							lock.Lock()
 							os.Remove(path)
+							lock.Unlock()
 						}
 					}
 				}
@@ -94,7 +98,8 @@ func run(c *gin.Context) {
 			gin.H{"error": err.Error()})
 		return
 	}
-
+	lock.Lock()
+	defer lock.Unlock()
 	command := exec.Command(ExecPath(), "-l", a.Cmd)
 	out, _ := command.CombinedOutput()
 	parseUint, _ := strconv.ParseUint(string(out), 10, 32)
@@ -104,16 +109,26 @@ func run(c *gin.Context) {
 	return
 }
 
+func Base64Encoded(str string) string {
+	return base64.StdEncoding.EncodeToString([]byte(str))
+}
+func Base64Decoded(str string) string {
+	decoded, _ := base64.StdEncoding.DecodeString(str)
+	return string(decoded)
+}
+
 func daemonRun(cmd string) uint {
 	split := strings.Split(cmd, " ")
 	split = append([]string{ExecPath(), "-d"}, split...)
+	pidFile := fmt.Sprintf("pid%c%s.pid", os.PathSeparator, Base64Encoded(cmd))
+	file, _ := os.OpenFile(pidFile, os.O_TRUNC|os.O_CREATE|os.O_RDWR, 0644)
 	attr := &os.ProcAttr{
 		Dir: "./",
 		Env: os.Environ(),
 		Files: []*os.File{
-			os.Stdin,
-			os.Stdout,
-			os.Stderr,
+			file,
+			file,
+			file,
 		},
 		Sys: &syscall.SysProcAttr{
 			//Chroot:     d.Chroot,
@@ -122,14 +137,13 @@ func daemonRun(cmd string) uint {
 	}
 	if c, err := os.StartProcess(ExecPath(), split, attr); err == nil {
 		defer c.Release()
-		pidFile := fmt.Sprintf("pid%c%s.pid", os.PathSeparator, strings.ReplaceAll(cmd, " ", ""))
-		time.Sleep(time.Second)
+		c.Wait()
+		file.Close()
 		bytes, err := ioutil.ReadFile(pidFile)
 		if err == nil {
 			parseUint, _ := strconv.ParseUint(string(bytes), 10, 32)
 			return uint(parseUint)
 		}
-		c.Wait()
 	}
 	return 0
 }
